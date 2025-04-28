@@ -2,21 +2,36 @@ pipeline {
     agent any
 
     stages {
-        stage('Deploy To Kubernetes') {
+        stage('Prepare Namespace') {
             steps {
-                withKubeCredentials(kubectlCredentials: [[caCertificate: '', clusterName: 'EKS-1', contextName: '', credentialsId: 'k8-token', namespace: 'webapps', serverUrl: 'https://9F39F577334FF23706994135261985F2.gr7.ap-south-1.eks.amazonaws.com']]) {
-                    sh "kubectl apply -f deployment-service.yml"
-                    
-                }
+                sh '''
+                    # Create namespace if it doesn't exist
+                    if ! kubectl get ns webapps >/dev/null 2>&1; then
+                        echo "Creating webapps namespace..."
+                        kubectl create ns webapps
+                    else
+                        echo "Namespace webapps already exists"
+                    fi
+                '''
             }
         }
-        
-        stage('verify Deployment') {
+
+        stage('Deploy to LKE') {
             steps {
-                withKubeCredentials(kubectlCredentials: [[caCertificate: '', clusterName: 'EKS-1', contextName: '', credentialsId: 'k8-token', namespace: 'webapps', serverUrl: 'https://9F39F577334FF23706994135261985F2.gr7.ap-south-1.eks.amazonaws.com']]) {
-                    sh "kubectl get svc -n webapps"
-                }
+                sh '''
+                    echo "===== Applying Manifests ====="
+                    kubectl apply -f deployment-service.yml -n webapps
+                    
+                    echo "\\n===== Deployment Status ====="
+                    kubectl get pods,svc -n webapps
+                '''
             }
+        }
+    }
+
+    post {
+        always {
+            sh 'kubectl get all -n webapps || true'
         }
     }
 }
